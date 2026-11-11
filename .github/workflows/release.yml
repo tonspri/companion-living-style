@@ -1,0 +1,37 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check the tag matches mod.json
+        run: |
+          version=$(node -p "require('./companion-living-style/mod.json').version")
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME does not match mod.json $version"; exit 1; }
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: Generated files are up to date and checks pass
+        run: |
+          node tools/build.cjs
+          git diff --exit-code -- companion-living-style
+          node tools/check.cjs
+          node tools/check-refresh.cjs
+      - name: Build the zip
+        run: zip -r -X "companion-living-style-$VERSION.zip" companion-living-style
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          awk -v v="## $VERSION" '$0==v{on=1;next} /^## /{if(on)exit} on' companion-living-style/CHANGELOG.md > notes.md
+          gh release create "$GITHUB_REF_NAME" "companion-living-style-$VERSION.zip" \
+            --title "Companion Living Style $VERSION" --notes-file notes.md
